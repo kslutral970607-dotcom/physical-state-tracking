@@ -31,8 +31,15 @@ class DatasetTest(unittest.TestCase):
             self.assertEqual(len(sample["steps"]), 3)
             self.assertEqual(len(sample["trajectory"]), 3)
             self.assertEqual(sample["initial_state"]["w"], sample["final_ground_truth_state"]["w"])
-            self.assertIn('Return only JSON like {"z": 4, "d": 1, "k": 0, "w": "blue"}', sample["prompt"])
-            self.assertIn("Return only valid JSON", sample["prompt"])
+            self.assertNotIn('{"z": 4, "d": 1, "k": 0, "w": "blue"}', sample["prompt"])
+            self.assertIn("Return only one valid JSON object.", sample["prompt"])
+            self.assertIn('The object must contain exactly these keys: "z", "d", "k", "w".', sample["prompt"])
+            self.assertIn('"z" must be the computed final integer position.', sample["prompt"])
+            self.assertIn('"d" must be the computed final direction, either 1 or -1.', sample["prompt"])
+            self.assertIn('"k" must be the computed final bounce count.', sample["prompt"])
+            self.assertIn('"w" must be copied unchanged from the initial state.', sample["prompt"])
+            self.assertIn("Do not include Markdown fences.", sample["prompt"])
+            self.assertIn("Do not include explanation.", sample["prompt"])
 
     def test_generation_is_deterministic(self):
         first = generate_dataset(n=5, seed=13)

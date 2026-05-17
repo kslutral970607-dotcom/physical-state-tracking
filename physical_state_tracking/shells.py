@@ -131,7 +131,13 @@ def _prompt(shell: str, initial_state: State, steps: List[dict], metadata: dict)
         "Steps JSON:",
         json.dumps(steps, sort_keys=True),
         "Use the transition rule. Boundaries are 0 and 10. Reaching or crossing a boundary causes a bounce. The dummy variable w must remain unchanged.",
-        'Return only JSON like {"z": 4, "d": 1, "k": 0, "w": "blue"}',
-        "Return only valid JSON with exactly the keys z, d, k, w.",
+        "Return only one valid JSON object.",
+        'The object must contain exactly these keys: "z", "d", "k", "w".',
+        '"z" must be the computed final integer position.',
+        '"d" must be the computed final direction, either 1 or -1.',
+        '"k" must be the computed final bounce count.',
+        '"w" must be copied unchanged from the initial state.',
+        "Do not include Markdown fences.",
+        "Do not include explanation.",
     ]
     return "\n".join(lines)

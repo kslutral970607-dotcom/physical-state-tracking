@@ -103,9 +103,9 @@ Example with all control variables set:
 python scripts/01_generate_data.py --n 120 --seed 42 --z 9 --d 1 --k 0 --w blue --num-steps 8 --output data/phase1/z9_d1_k0_wblue.jsonl
 ```
 
-## AutoDL Commands
+## MatPool Commands
 
-Run from the repository root on AutoDL.
+Run from the repository root on MatPool.
 
 ```bash
 python -m pip install -r requirements.txt
@@ -116,10 +116,16 @@ python scripts/02_run_behavior.py --model gpt2 --input data/processed/dev.jsonl 
 python -m unittest discover -s tests
 ```
 
-Larger example:
+Qwen behavior example:
 
 ```bash
-python scripts/01_generate_data.py --n 1000 --seed 42 --z 9 --d 1 --k 0 --w blue --num-steps 8 --output data/phase1/autodl_phase1.jsonl
+python scripts/02_run_behavior.py --model Qwen/Qwen2.5-7B-Instruct --input data/processed/dev.jsonl --predictions outputs/qwen_behavior_predictions.jsonl --metrics outputs/qwen_behavior_metrics.csv --device 0 --max-new-tokens 96
+```
+
+Larger MatPool data example:
+
+```bash
+python scripts/01_generate_data.py --n 1000 --seed 42 --z 9 --d 1 --k 0 --w blue --num-steps 8 --output data/phase1/matpool_phase1.jsonl
 ```
 
 No dependency installation is required for Phase 1. Phase 2 requires the packages in `requirements.txt`, but this repository does not install them automatically.
