@@ -52,6 +52,9 @@ def evaluate_dataset(samples: Iterable[dict], predict: PredictionFn) -> List[dic
             {
                 "index": index,
                 "prompt": prompt,
+                "steps": sample["steps"],
+                "trajectory": sample["trajectory"],
+                "transition_rule_metadata": sample["transition_rule_metadata"],
                 "shell": sample["shell"],
                 "z": sample["z"],
                 "d": sample["d"],
