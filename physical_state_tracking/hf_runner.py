@@ -31,7 +31,7 @@ class HuggingFaceRunner:
         request = (
             f"{prompt}\n\n"
             "Answer as a JSON object containing only the final state, for example "
-            '{"A": 1, "B": 2}.\n'
+            '{"z": 4, "d": 1, "k": 0, "w": "blue"}.\n'
         )
         outputs = self._generator(
             request,

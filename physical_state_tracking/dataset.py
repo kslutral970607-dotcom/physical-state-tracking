@@ -14,27 +14,42 @@ def generate_dataset(
     n: int,
     shells: Sequence[str] = SHELLS,
     seed: int = 0,
-    z: int = 0,
-    d: int = 4,
-    k: int = 3,
-    w: int = 1,
+    z: int | None = None,
+    d: int | None = None,
+    k: int = 0,
+    w: str | None = None,
+    num_steps: int = 6,
 ) -> List[dict]:
     if n < 0:
         raise ValueError("n must be non-negative")
     if not shells:
         raise ValueError("shells must not be empty")
-    if d < 1:
-        raise ValueError("d must be at least 1")
-    if k < 1 or k > 4:
-        raise ValueError("k must be between 1 and 4")
-    if w < 0:
-        raise ValueError("w must be non-negative")
+    if z is not None and not 0 <= z <= 10:
+        raise ValueError("z must be between 0 and 10")
+    if d is not None and d not in (-1, 1):
+        raise ValueError("d must be either -1 or 1")
+    if k < 0:
+        raise ValueError("k must be non-negative")
+    if w is not None and not w:
+        raise ValueError("w must be a non-empty string")
+    if num_steps < 1:
+        raise ValueError("num_steps must be at least 1")
 
     rng = Random(seed)
     samples = []
     for index in range(n):
         shell = shells[index % len(shells)]
-        samples.append(make_sample(shell=shell, rng=rng, z=z, d=d, k=k, w=w).to_dict())
+        samples.append(
+            make_sample(
+                shell=shell,
+                rng=rng,
+                z=z,
+                d=d,
+                k=k,
+                w=w,
+                num_steps=num_steps,
+            ).to_dict()
+        )
     return samples
 
 

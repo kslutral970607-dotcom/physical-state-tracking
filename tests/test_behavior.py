@@ -54,16 +54,34 @@ class BehaviorTest(unittest.TestCase):
 
     def test_compute_metrics(self):
         rows = [
-            {"exact_match": True, "json_valid": True, "z": 0, "d": 1, "k": 1, "w": 0},
-            {"exact_match": False, "json_valid": True, "z": 0, "d": 2, "k": 1, "w": 1},
-            {"exact_match": True, "json_valid": False, "z": 1, "d": 2, "k": 2, "w": 1},
+            {
+                "exact_match": True,
+                "json_valid": True,
+                "prediction": {"z": 4, "d": 1, "k": 0, "w": "blue"},
+                "final_ground_truth_state": {"z": 4, "d": 1, "k": 0, "w": "blue"},
+            },
+            {
+                "exact_match": False,
+                "json_valid": True,
+                "prediction": {"z": 3, "d": 1, "k": 0, "w": "blue"},
+                "final_ground_truth_state": {"z": 4, "d": -1, "k": 1, "w": "blue"},
+            },
+            {
+                "exact_match": False,
+                "json_valid": False,
+                "prediction": None,
+                "final_ground_truth_state": {"z": 4, "d": -1, "k": 1, "w": "red"},
+            },
         ]
 
         metrics = compute_metrics(rows)
 
-        self.assertAlmostEqual(metrics["exact_match"], 2 / 3)
+        self.assertAlmostEqual(metrics["exact_match"], 1 / 3)
         self.assertAlmostEqual(metrics["json_validity"], 2 / 3)
-        self.assertAlmostEqual(metrics["z_accuracy"], 0.75)
+        self.assertAlmostEqual(metrics["z_accuracy"], 1 / 3)
+        self.assertAlmostEqual(metrics["d_accuracy"], 1 / 3)
+        self.assertAlmostEqual(metrics["k_accuracy"], 1 / 3)
+        self.assertAlmostEqual(metrics["w_preservation"], 2 / 3)
 
 
 if __name__ == "__main__":

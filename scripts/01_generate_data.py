@@ -19,10 +19,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n", type=int, default=60, help="number of samples")
     parser.add_argument("--seed", type=int, default=0, help="random seed")
-    parser.add_argument("--z", type=int, default=0, help="latent abstraction index")
-    parser.add_argument("--d", type=int, default=4, help="transition depth")
-    parser.add_argument("--k", type=int, default=3, help="number of state variables")
-    parser.add_argument("--w", type=int, default=1, help="distractor width")
+    parser.add_argument("--z", type=int, default=None, help="initial position, 0 through 10")
+    parser.add_argument("--d", type=int, choices=(-1, 1), default=None, help="initial direction")
+    parser.add_argument("--k", type=int, default=0, help="initial bounce count")
+    parser.add_argument("--w", type=str, default=None, help="dummy variable, such as a color")
+    parser.add_argument("--num-steps", type=int, default=6, help="number of transition steps")
     parser.add_argument(
         "--shells",
         nargs="+",
@@ -49,6 +50,7 @@ def main() -> None:
         d=args.d,
         k=args.k,
         w=args.w,
+        num_steps=args.num_steps,
     )
     write_jsonl(samples, args.output)
     print(f"Wrote {len(samples)} samples to {args.output}")

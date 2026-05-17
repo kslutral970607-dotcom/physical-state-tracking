@@ -73,10 +73,10 @@ def compute_metrics(prediction_rows: Iterable[dict]) -> Dict[str, float]:
     rows = list(prediction_rows)
     return {
         "exact_match": _mean(row["exact_match"] for row in rows),
-        "z_accuracy": _macro_accuracy(rows, "z"),
-        "d_accuracy": _macro_accuracy(rows, "d"),
-        "k_accuracy": _macro_accuracy(rows, "k"),
-        "w_preservation": _macro_accuracy(rows, "w"),
+        "z_accuracy": _field_accuracy(rows, "z"),
+        "d_accuracy": _field_accuracy(rows, "d"),
+        "k_accuracy": _field_accuracy(rows, "k"),
+        "w_preservation": _field_accuracy(rows, "w"),
         "json_validity": _mean(row["json_valid"] for row in rows),
     }
 
@@ -156,10 +156,13 @@ def _mean(values: Iterable[bool]) -> float:
     return sum(1 for value in values if value) / len(values)
 
 
-def _macro_accuracy(rows: List[dict], key: str) -> float:
-    groups: Dict[object, List[dict]] = {}
-    for row in rows:
-        groups.setdefault(row[key], []).append(row)
-    if not groups:
+def _field_accuracy(rows: List[dict], key: str) -> float:
+    if not rows:
         return 0.0
-    return sum(_mean(row["exact_match"] for row in group) for group in groups.values()) / len(groups)
+    correct = 0
+    for row in rows:
+        prediction = row.get("prediction")
+        expected = row.get("final_ground_truth_state", {})
+        if isinstance(prediction, dict) and prediction.get(key) == expected.get(key):
+            correct += 1
+    return correct / len(rows)

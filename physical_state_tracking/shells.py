@@ -1,12 +1,13 @@
-"""Prompt shells for synthetic state-tracking samples."""
+"""Prompt shells for bouncing state-tracking samples."""
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from random import Random
-from typing import Dict, List, Sequence
+from typing import Dict, List
 
-from .state_machine import Operation, StateMachine, State
+from .state_machine import BounceStep, State, StateMachine
 
 
 SHELLS = (
@@ -18,18 +19,22 @@ SHELLS = (
     "adversarial",
 )
 
+COLORS = ("blue", "red", "green", "yellow")
+
 
 @dataclass(frozen=True)
 class Sample:
     prompt: str
     shell: str
-    steps: List[str]
+    steps: List[dict]
     initial_state: State
     final_ground_truth_state: State
+    trajectory: List[State]
+    transition_rule_metadata: dict
     z: int
     d: int
     k: int
-    w: int
+    w: str
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -38,6 +43,8 @@ class Sample:
             "steps": self.steps,
             "initial_state": self.initial_state,
             "final_ground_truth_state": self.final_ground_truth_state,
+            "trajectory": self.trajectory,
+            "transition_rule_metadata": self.transition_rule_metadata,
             "z": self.z,
             "d": self.d,
             "k": self.k,
@@ -45,94 +52,86 @@ class Sample:
         }
 
 
-def make_sample(shell: str, rng: Random, z: int, d: int, k: int, w: int) -> Sample:
+def make_sample(
+    shell: str,
+    rng: Random,
+    z: int | None,
+    d: int | None,
+    k: int,
+    w: str | None,
+    num_steps: int,
+) -> Sample:
     if shell not in SHELLS:
         raise ValueError(f"unknown shell: {shell}")
+    if num_steps < 1:
+        raise ValueError("num_steps must be at least 1")
 
-    variables = _variables(shell)
-    initial_state = {name: rng.randint(1, 9) for name in variables[:k]}
-    operations = _make_operations(shell, list(initial_state), rng, d, w)
-    final_state = StateMachine(initial_state).apply(operations)
-    steps = [operation.description for operation in operations]
+    initial_state = {
+        "z": rng.randint(1, 9) if z is None else z,
+        "d": rng.choice((-1, 1)) if d is None else d,
+        "k": k,
+        "w": rng.choice(COLORS) if w is None else w,
+    }
+    step_sizes = [rng.randint(1, 4) for _ in range(num_steps)]
+    bounce_steps = [BounceStep(step_size=value) for value in step_sizes]
+    machine = StateMachine(initial_state)
+    final_state, trajectory = machine.run(bounce_steps)
+    metadata = machine.metadata()
+    metadata["step_sizes"] = step_sizes
+    steps = [_step(shell, index, step_size) for index, step_size in enumerate(step_sizes)]
 
     return Sample(
-        prompt=_prompt(shell, initial_state, steps),
+        prompt=_prompt(shell, initial_state, steps, metadata),
         shell=shell,
         steps=steps,
         initial_state=initial_state,
         final_ground_truth_state=final_state,
-        z=z,
-        d=d,
-        k=k,
-        w=w,
+        trajectory=trajectory,
+        transition_rule_metadata=metadata,
+        z=int(initial_state["z"]),
+        d=int(initial_state["d"]),
+        k=int(initial_state["k"]),
+        w=str(initial_state["w"]),
     )
 
 
-def _variables(shell: str) -> Sequence[str]:
+def _step(shell: str, index: int, step_size: int) -> dict:
     return {
-        "symbolic": ("A", "B", "C", "D"),
-        "explicit_physics": ("cart", "block", "tray", "bin"),
-        "implicit_physics": ("cup", "bowl", "box", "bag"),
-        "finance": ("checking", "savings", "brokerage", "cash"),
-        "game": ("health", "mana", "coins", "keys"),
-        "adversarial": ("red", "blue", "green", "yellow"),
-    }[shell]
+        "index": index + 1,
+        "step_size": step_size,
+        "text": _describe(shell, step_size),
+    }
 
 
-def _make_operations(
-    shell: str, variables: List[str], rng: Random, depth: int, noise_width: int
-) -> List[Operation]:
-    operations: List[Operation] = []
-    for step_index in range(depth):
-        variable = variables[step_index % len(variables)]
-        delta = rng.choice((-3, -2, -1, 1, 2, 3))
-        if shell == "adversarial" and step_index % 2 == 1:
-            delta *= -1
-        operations.append(
-            Operation(
-                variable=variable,
-                delta=delta,
-                description=_describe(shell, variable, delta, step_index, noise_width),
-            )
-        )
-    return operations
-
-
-def _describe(shell: str, variable: str, delta: int, step_index: int, noise_width: int) -> str:
-    magnitude = abs(delta)
-    direction = "increases" if delta > 0 else "decreases"
-    distractor = f" Ignore note {step_index % max(1, noise_width)}." if noise_width else ""
-
+def _describe(shell: str, step_size: int) -> str:
     if shell == "symbolic":
-        return f"{variable} {direction} by {magnitude}.{distractor}"
+        return f"Apply one transition with step_size {step_size}."
     if shell == "explicit_physics":
-        verb = "moves forward" if delta > 0 else "moves backward"
-        return f"The {variable} {verb} by {magnitude} units.{distractor}"
+        return f"A puck moves {step_size} units in its current direction and bounces if it reaches or crosses a wall."
     if shell == "implicit_physics":
-        verb = "receives" if delta > 0 else "loses"
-        return f"The {variable} quietly {verb} {magnitude} tokens.{distractor}"
+        return f"The marker drifts {step_size} ticks along its current tendency; edge overflow turns it around."
     if shell == "finance":
-        verb = "deposit" if delta > 0 else "withdrawal"
-        return f"A {verb} of {magnitude} posts to {variable}.{distractor}"
+        return f"The account index shifts by {step_size} risk bands; crossing a limit reflects the position and flips direction."
     if shell == "game":
-        verb = "gains" if delta > 0 else "spends"
-        return f"The player {verb} {magnitude} {variable}.{distractor}"
+        return f"The token advances {step_size} cells; overshooting an arena edge bounces it back and reverses direction."
     if shell == "adversarial":
-        apparent = "down" if delta > 0 else "up"
-        true_direction = "up" if delta > 0 else "down"
         return (
-            f"A misleading note says {variable} goes {apparent}, "
-            f"but the rule says it actually goes {true_direction} by {magnitude}.{distractor}"
+            f"A misleading note claims color changes after moving {step_size}, "
+            "but the real rule keeps w unchanged and only updates z, d, and k."
         )
     raise ValueError(f"unknown shell: {shell}")
 
 
-def _prompt(shell: str, initial_state: State, steps: List[str]) -> str:
+def _prompt(shell: str, initial_state: State, steps: List[dict], metadata: dict) -> str:
     lines = [
-        f"Track the final state for the {shell} scenario.",
-        f"Initial state: {initial_state}",
-        "Steps:",
+        f"Track the bouncing state machine for the {shell} shell.",
+        "State keys are exactly z, d, k, w.",
+        f"Initial state JSON: {json.dumps(initial_state, sort_keys=True)}",
+        f"Transition rule metadata JSON: {json.dumps(metadata, sort_keys=True)}",
+        "Steps JSON:",
+        json.dumps(steps, sort_keys=True),
+        "Use the transition rule. Boundaries are 0 and 10. Reaching or crossing a boundary causes a bounce. The dummy variable w must remain unchanged.",
+        'Return only JSON like {"z": 4, "d": 1, "k": 0, "w": "blue"}',
+        "Return only valid JSON with exactly the keys z, d, k, w.",
     ]
-    lines.extend(f"{index + 1}. {step}" for index, step in enumerate(steps))
-    lines.append("Return only the final state.")
     return "\n".join(lines)
