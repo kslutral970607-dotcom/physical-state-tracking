@@ -12,7 +12,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from physical_state_tracking.dataset import generate_dataset, write_jsonl
-from physical_state_tracking.shells import SHELLS
+from physical_state_tracking.shells import PROMPT_VARIANTS, SHELLS
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,6 +24,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--k", type=int, default=0, help="initial bounce count")
     parser.add_argument("--w", type=str, default=None, help="dummy variable, such as a color")
     parser.add_argument("--num-steps", type=int, default=6, help="number of transition steps")
+    parser.add_argument(
+        "--prompt-variant",
+        choices=PROMPT_VARIANTS,
+        default="metadata_json",
+        help="prompt interface to use",
+    )
     parser.add_argument(
         "--shells",
         nargs="+",
@@ -51,6 +57,7 @@ def main() -> None:
         k=args.k,
         w=args.w,
         num_steps=args.num_steps,
+        prompt_variant=args.prompt_variant,
     )
     write_jsonl(samples, args.output)
     print(f"Wrote {len(samples)} samples to {args.output}")

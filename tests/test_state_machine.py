@@ -12,6 +12,27 @@ class StateMachineTest(unittest.TestCase):
         self.assertEqual(final_state, {"z": 7, "d": 1, "k": 0, "w": "blue"})
         self.assertEqual(machine.initial_state, {"z": 4, "d": 1, "k": 0, "w": "blue"})
 
+    def test_diagnostic_no_boundary_transition_preserves_d_k_w(self):
+        machine = StateMachine({"z": 5, "d": 1, "k": 0, "w": "blue"})
+
+        final_state = machine.apply([BounceStep(3)])
+
+        self.assertEqual(final_state, {"z": 8, "d": 1, "k": 0, "w": "blue"})
+
+    def test_diagnostic_upper_boundary_reflection(self):
+        machine = StateMachine({"z": 9, "d": 1, "k": 0, "w": "blue"})
+
+        final_state = machine.apply([BounceStep(3)])
+
+        self.assertEqual(final_state, {"z": 8, "d": -1, "k": 1, "w": "blue"})
+
+    def test_diagnostic_lower_boundary_reflection(self):
+        machine = StateMachine({"z": 1, "d": -1, "k": 0, "w": "green"})
+
+        final_state = machine.apply([BounceStep(3)])
+
+        self.assertEqual(final_state, {"z": 2, "d": 1, "k": 1, "w": "green"})
+
     def test_reflects_at_upper_boundary(self):
         machine = StateMachine({"z": 9, "d": 1, "k": 0, "w": "red"})
 

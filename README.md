@@ -45,9 +45,13 @@ physical_state_tracking/
 scripts/
   01_generate_data.py
   02_run_behavior.py
+  06_prepare_sft_data.py
+  07_train_lora_sft.py
+  08_eval_lora_checkpoint.py
 tests/
   test_behavior.py
   test_dataset.py
+  test_sft_data.py
   test_state_machine.py
 ```
 
@@ -65,6 +69,12 @@ Generate Phase 1 data:
 
 ```powershell
 python scripts/01_generate_data.py --n 60 --seed 0 --num-steps 6 --output data/phase1/synthetic_state_tracking.jsonl
+```
+
+Generate a simple plain diagnostic set:
+
+```powershell
+python scripts/01_generate_data.py --n 4 --seed 5 --z 5 --d 1 --k 0 --w blue --num-steps 1 --shells symbolic --prompt-variant simple_plain --output data/phase1/simple_plain_symbolic_no_boundary.jsonl
 ```
 
 Create the default Phase 2 dev file:
@@ -97,6 +107,68 @@ C:\Users\Kings\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\p
 C:\Users\Kings\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest discover -s tests
 ```
 
+## LoRA SFT Pipeline
+
+The SFT path is separate from the zero-shot behavior runner. `scripts/02_run_behavior.py` remains unchanged for baseline evaluation.
+
+Convert generated samples to chat-format SFT JSONL:
+
+```powershell
+python scripts/06_prepare_sft_data.py --input data/phase1/stage1_symbolic_no_boundary.jsonl --output data/sft/stage1_final_only.jsonl --format final_only
+python scripts/06_prepare_sft_data.py --input data/phase1/stage1_symbolic_no_boundary.jsonl --output data/sft/stage1_trajectory_then_final.jsonl --format trajectory_then_final
+```
+
+Train a Qwen2.5-1.5B-Instruct LoRA adapter:
+
+```powershell
+python scripts/07_train_lora_sft.py --model Qwen/Qwen2.5-1.5B-Instruct --train-data data/sft/stage1_final_only.jsonl --eval-data data/sft/stage1_final_only.jsonl --output-dir outputs/lora_qwen_stage1 --max-steps 200 --learning-rate 2e-4 --lora-r 16 --lora-alpha 32 --batch-size 1 --gradient-accumulation-steps 8
+```
+
+Evaluate a trained LoRA checkpoint with the behavior metrics:
+
+```powershell
+python scripts/08_eval_lora_checkpoint.py --model Qwen/Qwen2.5-1.5B-Instruct --checkpoint outputs/lora_qwen_stage1 --input data/phase1/stage1_symbolic_no_boundary.jsonl --predictions outputs/lora_stage1_predictions.jsonl --metrics outputs/lora_stage1_metrics.csv --device 0 --max-new-tokens 128
+```
+
+## Curriculum Data Commands
+
+Stage 1: 1-step no-boundary symbolic.
+
+```powershell
+python scripts/01_generate_data.py --n 1000 --seed 101 --z 5 --d 1 --k 0 --w blue --num-steps 1 --shells symbolic --prompt-variant metadata_json --output data/phase1/stage1_symbolic_no_boundary.jsonl
+python scripts/06_prepare_sft_data.py --input data/phase1/stage1_symbolic_no_boundary.jsonl --output data/sft/stage1_symbolic_no_boundary_final_only.jsonl --format final_only
+```
+
+Stage 2: 1-step boundary symbolic.
+
+```powershell
+python scripts/01_generate_data.py --n 1000 --seed 102 --z 9 --d 1 --k 0 --w blue --num-steps 1 --shells symbolic --prompt-variant metadata_json --output data/phase1/stage2_symbolic_boundary.jsonl
+python scripts/06_prepare_sft_data.py --input data/phase1/stage2_symbolic_boundary.jsonl --output data/sft/stage2_symbolic_boundary_final_only.jsonl --format final_only
+```
+
+Stage 3: 2-step symbolic mixed.
+
+```powershell
+python scripts/01_generate_data.py --n 2000 --seed 103 --num-steps 2 --shells symbolic --prompt-variant metadata_json --output data/phase1/stage3_symbolic_2step_mixed.jsonl
+python scripts/06_prepare_sft_data.py --input data/phase1/stage3_symbolic_2step_mixed.jsonl --output data/sft/stage3_symbolic_2step_mixed_final_only.jsonl --format final_only
+```
+
+Stage 4: 4-step / 6-step symbolic mixed.
+
+```powershell
+python scripts/01_generate_data.py --n 3000 --seed 104 --num-steps 4 --shells symbolic --prompt-variant metadata_json --output data/phase1/stage4_symbolic_4step_mixed.jsonl
+python scripts/01_generate_data.py --n 3000 --seed 105 --num-steps 6 --shells symbolic --prompt-variant metadata_json --output data/phase1/stage4_symbolic_6step_mixed.jsonl
+python scripts/06_prepare_sft_data.py --input data/phase1/stage4_symbolic_4step_mixed.jsonl --output data/sft/stage4_symbolic_4step_mixed_final_only.jsonl --format final_only
+python scripts/06_prepare_sft_data.py --input data/phase1/stage4_symbolic_6step_mixed.jsonl --output data/sft/stage4_symbolic_6step_mixed_final_only.jsonl --format final_only
+```
+
+Stage 5: semantic shells.
+
+```powershell
+python scripts/01_generate_data.py --n 6000 --seed 106 --num-steps 6 --shells explicit_physics implicit_physics finance game adversarial --prompt-variant metadata_json --output data/phase1/stage5_semantic_shells.jsonl
+python scripts/06_prepare_sft_data.py --input data/phase1/stage5_semantic_shells.jsonl --output data/sft/stage5_semantic_shells_final_only.jsonl --format final_only
+```
+
 Example with all control variables set:
 
 ```powershell
@@ -110,8 +182,9 @@ Run from the repository root on MatPool.
 ```bash
 python -m pip install -r requirements.txt
 python scripts/01_generate_data.py --n 60 --seed 0 --num-steps 6 --output data/phase1/synthetic_state_tracking.jsonl
+python scripts/01_generate_data.py --n 4 --seed 5 --z 5 --d 1 --k 0 --w blue --num-steps 1 --shells symbolic --prompt-variant simple_plain --output data/phase1/simple_plain_symbolic_no_boundary.jsonl
 mkdir -p data/processed
-cp data/phase1/synthetic_state_tracking.jsonl data/processed/dev.jsonl
+cp data/phase1/simple_plain_symbolic_no_boundary.jsonl data/processed/dev.jsonl
 python scripts/02_run_behavior.py --model gpt2 --input data/processed/dev.jsonl --predictions outputs/behavior_predictions.jsonl --metrics outputs/behavior_metrics.csv
 python -m unittest discover -s tests
 ```

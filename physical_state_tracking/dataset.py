@@ -7,7 +7,7 @@ from pathlib import Path
 from random import Random
 from typing import Iterable, List, Sequence
 
-from .shells import SHELLS, make_sample
+from .shells import PROMPT_VARIANTS, SHELLS, make_sample
 
 
 def generate_dataset(
@@ -19,6 +19,7 @@ def generate_dataset(
     k: int = 0,
     w: str | None = None,
     num_steps: int = 6,
+    prompt_variant: str = "metadata_json",
 ) -> List[dict]:
     if n < 0:
         raise ValueError("n must be non-negative")
@@ -34,6 +35,8 @@ def generate_dataset(
         raise ValueError("w must be a non-empty string")
     if num_steps < 1:
         raise ValueError("num_steps must be at least 1")
+    if prompt_variant not in PROMPT_VARIANTS:
+        raise ValueError(f"prompt_variant must be one of: {', '.join(PROMPT_VARIANTS)}")
 
     rng = Random(seed)
     samples = []
@@ -48,6 +51,7 @@ def generate_dataset(
                 k=k,
                 w=w,
                 num_steps=num_steps,
+                prompt_variant=prompt_variant,
             ).to_dict()
         )
     return samples

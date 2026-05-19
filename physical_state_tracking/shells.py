@@ -10,6 +10,8 @@ from typing import Dict, List
 from .state_machine import BounceStep, State, StateMachine
 
 
+PROMPT_VARIANTS = ("metadata_json", "simple_plain")
+
 SHELLS = (
     "symbolic",
     "explicit_physics",
@@ -31,6 +33,7 @@ class Sample:
     final_ground_truth_state: State
     trajectory: List[State]
     transition_rule_metadata: dict
+    prompt_variant: str
     z: int
     d: int
     k: int
@@ -45,6 +48,7 @@ class Sample:
             "final_ground_truth_state": self.final_ground_truth_state,
             "trajectory": self.trajectory,
             "transition_rule_metadata": self.transition_rule_metadata,
+            "prompt_variant": self.prompt_variant,
             "z": self.z,
             "d": self.d,
             "k": self.k,
@@ -60,9 +64,12 @@ def make_sample(
     k: int,
     w: str | None,
     num_steps: int,
+    prompt_variant: str = "metadata_json",
 ) -> Sample:
     if shell not in SHELLS:
         raise ValueError(f"unknown shell: {shell}")
+    if prompt_variant not in PROMPT_VARIANTS:
+        raise ValueError(f"unknown prompt variant: {prompt_variant}")
     if num_steps < 1:
         raise ValueError("num_steps must be at least 1")
 
@@ -81,13 +88,14 @@ def make_sample(
     steps = [_step(shell, index, step_size) for index, step_size in enumerate(step_sizes)]
 
     return Sample(
-        prompt=_prompt(shell, initial_state, steps, metadata),
+        prompt=_prompt(shell, initial_state, steps, metadata, trajectory, prompt_variant),
         shell=shell,
         steps=steps,
         initial_state=initial_state,
         final_ground_truth_state=final_state,
         trajectory=trajectory,
         transition_rule_metadata=metadata,
+        prompt_variant=prompt_variant,
         z=int(initial_state["z"]),
         d=int(initial_state["d"]),
         k=int(initial_state["k"]),
@@ -122,7 +130,20 @@ def _describe(shell: str, step_size: int) -> str:
     raise ValueError(f"unknown shell: {shell}")
 
 
-def _prompt(shell: str, initial_state: State, steps: List[dict], metadata: dict) -> str:
+def _prompt(
+    shell: str,
+    initial_state: State,
+    steps: List[dict],
+    metadata: dict,
+    trajectory: List[State],
+    prompt_variant: str,
+) -> str:
+    if prompt_variant == "simple_plain":
+        return _simple_plain_prompt(initial_state, steps, trajectory)
+    return _metadata_json_prompt(shell, initial_state, steps, metadata)
+
+
+def _metadata_json_prompt(shell: str, initial_state: State, steps: List[dict], metadata: dict) -> str:
     lines = [
         f"Track the bouncing state machine for the {shell} shell.",
         "State keys are exactly z, d, k, w.",
@@ -131,6 +152,7 @@ def _prompt(shell: str, initial_state: State, steps: List[dict], metadata: dict)
         "Steps JSON:",
         json.dumps(steps, sort_keys=True),
         "Use the transition rule. Boundaries are 0 and 10. Reaching or crossing a boundary causes a bounce. The dummy variable w must remain unchanged.",
+        "If a step does not reach or cross 0 or 10, update only z; d and k stay unchanged.",
         "Return only one valid JSON object.",
         'The object must contain exactly these keys: "z", "d", "k", "w".',
         '"z" must be the computed final integer position.',
@@ -141,3 +163,102 @@ def _prompt(shell: str, initial_state: State, steps: List[dict], metadata: dict)
         "Do not include explanation.",
     ]
     return "\n".join(lines)
+
+
+def _simple_plain_prompt(initial_state: State, steps: List[dict], trajectory: List[State]) -> str:
+    transition_rows = _transition_rows(initial_state, steps, trajectory)
+    has_boundary_crossing = any(row["crossed_boundary"] for row in transition_rows)
+
+    lines = ["You are simulating a simple deterministic state machine.", ""]
+    lines.extend(
+        [
+            "Initial state:",
+            f"z = {initial_state['z']}",
+            f"d = {initial_state['d']}",
+            f"k = {initial_state['k']}",
+            f"w = {initial_state['w']}",
+            "",
+        ]
+    )
+
+    if len(transition_rows) == 1:
+        lines.extend(["One step:", f"step_size = {transition_rows[0]['step_size']}", ""])
+    else:
+        lines.append("Steps:")
+        for row in transition_rows:
+            lines.append(f"{row['index']}. step_size = {row['step_size']}")
+        lines.append("")
+
+    if has_boundary_crossing:
+        lines.extend(
+            [
+                "Boundary crossing details:",
+                "The boundary is 0 or 10.",
+                "When the proposed z_next reaches or crosses a boundary, crossing causes reflection.",
+                "d reverses.",
+                "k increases by 1.",
+            ]
+        )
+        for row in transition_rows:
+            if row["crossed_boundary"]:
+                lines.extend(
+                    [
+                        "",
+                        f"Step {row['index']}:",
+                        f"proposed z_next = {row['previous_z']} + {row['step_size']} * {row['previous_d']} = {row['proposed_z']}",
+                        f"reflected z = {row['next_z']}",
+                        f"d reverses to {row['next_d']}",
+                        f"k increases to {row['next_k']}",
+                    ]
+                )
+            else:
+                lines.extend(
+                    [
+                        "",
+                        f"Step {row['index']}:",
+                        f"proposed z_next = {row['previous_z']} + {row['step_size']} * {row['previous_d']} = {row['proposed_z']}",
+                        "There is no boundary crossing in this step.",
+                        "d stays the same.",
+                        "k stays the same.",
+                    ]
+                )
+    else:
+        crossing_phrase = "There is no boundary crossing in this case."
+        lines.extend(
+            [
+                crossing_phrase,
+                "Use these updates:",
+                "z = z + step_size * d",
+                "d stays the same",
+                "k stays the same",
+                "w stays the same",
+            ]
+        )
+
+    lines.extend(["", "Return only one JSON object with exactly these keys: z, d, k, w."])
+    return "\n".join(lines)
+
+
+def _transition_rows(initial_state: State, steps: List[dict], trajectory: List[State]) -> List[dict]:
+    rows = []
+    previous = initial_state
+    for step, next_state in zip(steps, trajectory):
+        step_size = int(step["step_size"])
+        previous_z = int(previous["z"])
+        previous_d = int(previous["d"])
+        proposed_z = previous_z + step_size * previous_d
+        rows.append(
+            {
+                "index": step["index"],
+                "step_size": step_size,
+                "previous_z": previous_z,
+                "previous_d": previous_d,
+                "proposed_z": proposed_z,
+                "crossed_boundary": proposed_z <= 0 or proposed_z >= 10,
+                "next_z": next_state["z"],
+                "next_d": next_state["d"],
+                "next_k": next_state["k"],
+            }
+        )
+        previous = next_state
+    return rows

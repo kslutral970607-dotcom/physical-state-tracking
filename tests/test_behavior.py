@@ -10,6 +10,7 @@ def sample_with_context(**overrides):
         "steps": [{"index": 1, "step_size": 3, "text": "Apply one transition with step_size 3."}],
         "trajectory": [{"z": 8, "d": 1, "k": 0, "w": "blue"}],
         "transition_rule_metadata": {"lower_boundary": 0, "upper_boundary": 10},
+        "prompt_variant": "simple_plain",
         "initial_state": {"z": 5, "d": 1, "k": 0, "w": "blue"},
         "final_ground_truth_state": {"z": 8, "d": 1, "k": 0, "w": "blue"},
         "z": 5,
@@ -26,6 +27,18 @@ class BehaviorTest(unittest.TestCase):
         parsed = parse_json_object('thinking...\n{"A": "4", "B": 2}\nextra')
 
         self.assertEqual(parsed, {"A": "4", "B": 2})
+
+    def test_parser_prefers_assistant_completion_over_prompt_json(self):
+        fake_prompt = (
+            'Initial state JSON: {"z": 5, "d": 1, "k": 0, "w": "blue"}\n'
+            'Transition rule metadata JSON: {"boundaries": {"lower": 0, "upper": 10}}\n'
+            'Steps JSON:\n[{"index": 1, "step_size": 3}]'
+        )
+        fake_completion = '```json\n{"z": 8, "d": 1, "k": 0, "w": "blue"}\n```'
+
+        parsed = parse_json_object(fake_prompt + "\n" + fake_completion)
+
+        self.assertEqual(parsed, {"z": 8, "d": 1, "k": 0, "w": "blue"})
 
     def test_parse_python_style_dict_from_noisy_output(self):
         parsed = parse_json_object("final answer: {'A': 4, 'B': 2}")
@@ -74,6 +87,7 @@ class BehaviorTest(unittest.TestCase):
             "steps",
             "trajectory",
             "transition_rule_metadata",
+            "prompt_variant",
             "initial_state",
             "final_ground_truth_state",
             "shell",
@@ -93,6 +107,15 @@ class BehaviorTest(unittest.TestCase):
 
         self.assertTrue(rows[0]["exact_match"])
         self.assertEqual(rows[0]["prediction"], {"z": 8, "d": 1, "k": 0, "w": "blue"})
+
+    def test_exact_match_rejects_extra_keys(self):
+        rows = evaluate_dataset(
+            [sample_with_context()],
+            lambda _: '{"z": 8, "d": 1, "k": 0, "w": "blue", "extra": 0}',
+        )
+
+        self.assertFalse(rows[0]["exact_match"])
+        self.assertEqual(rows[0]["prediction"]["d"], 1)
 
     def test_compute_metrics(self):
         rows = [

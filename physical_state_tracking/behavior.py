@@ -25,9 +25,10 @@ def write_jsonl(rows: Iterable[dict], path: Path) -> None:
 
 
 def parse_json_object(text: str) -> Optional[dict]:
-    """Extract the first object-like JSON payload from model text."""
+    """Extract the final object-like JSON payload from model text."""
 
     decoder = json.JSONDecoder()
+    parsed_objects = []
     for start in _candidate_starts(text):
         candidate = text[start:].strip()
         try:
@@ -35,8 +36,8 @@ def parse_json_object(text: str) -> Optional[dict]:
         except json.JSONDecodeError:
             parsed = _parse_python_literal(candidate)
         if isinstance(parsed, dict):
-            return parsed
-    return None
+            parsed_objects.append(parsed)
+    return parsed_objects[-1] if parsed_objects else None
 
 
 def evaluate_dataset(samples: Iterable[dict], predict: PredictionFn) -> List[dict]:
@@ -55,6 +56,7 @@ def evaluate_dataset(samples: Iterable[dict], predict: PredictionFn) -> List[dic
                 "steps": sample["steps"],
                 "trajectory": sample["trajectory"],
                 "transition_rule_metadata": sample["transition_rule_metadata"],
+                "prompt_variant": sample.get("prompt_variant"),
                 "shell": sample["shell"],
                 "z": sample["z"],
                 "d": sample["d"],
