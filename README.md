@@ -48,9 +48,11 @@ scripts/
   06_prepare_sft_data.py
   07_train_lora_sft.py
   08_eval_lora_checkpoint.py
+  09_eval_checkpoint_sweep.py
 tests/
   test_behavior.py
   test_dataset.py
+  test_error_patterns.py
   test_sft_data.py
   test_state_machine.py
 ```
@@ -129,6 +131,50 @@ Evaluate a trained LoRA checkpoint with the behavior metrics:
 ```powershell
 python scripts/08_eval_lora_checkpoint.py --model Qwen/Qwen2.5-1.5B-Instruct --checkpoint outputs/lora_qwen_stage1 --input data/phase1/stage1_symbolic_no_boundary.jsonl --predictions outputs/lora_stage1_predictions.jsonl --metrics outputs/lora_stage1_metrics.csv --device 0 --max-new-tokens 128
 ```
+
+### Preserving Shortcut Checkpoints
+
+If a LoRA adapter has learned the useful shortcut `z_pred = z_initial + step_size`, `d_pred = 1`, `k` copied, and `w` copied, keep it frozen as a named reference checkpoint. For the current shortcut finding, preserve:
+
+```text
+outputs/lora_qwen15b_shortcut_dpos_only
+```
+
+Do not reuse that directory as `--output-dir` for later training. `scripts/07_train_lora_sft.py` refuses to train directly into this protected path. When starting bidirectional training, choose a new directory:
+
+```powershell
+python scripts/07_train_lora_sft.py --model Qwen/Qwen2.5-1.5B-Instruct --train-data data/sft/stage1_bidirectional_final_only.jsonl --eval-data data/sft/stage1_bidirectional_final_only.jsonl --output-dir outputs/lora_qwen15b_1step_nobounce_bidirectional --max-steps 200 --learning-rate 2e-4 --lora-r 16 --lora-alpha 32 --batch-size 1 --gradient-accumulation-steps 8 --save-steps 25 --eval-steps 25 --logging-steps 5 --save-total-limit 20 --save-strategy steps --eval-strategy steps --save-at-steps 5,10,20,50,75,100,150,200
+```
+
+`--save-steps` gives uniform HuggingFace Trainer checkpoints. `--save-at-steps` additionally writes adapter-compatible custom checkpoints such as `checkpoint-5`, `checkpoint-10`, and `checkpoint-20`, which is useful for seeing exactly when the model stops relying on the one-direction shortcut.
+
+### Checkpoint Sweep
+
+Evaluate the preserved shortcut checkpoint and dense bidirectional checkpoints on several OOD datasets:
+
+```powershell
+python scripts/09_eval_checkpoint_sweep.py --model /mnt/models/Qwen/Qwen2___5-1___5B-Instruct --checkpoints outputs/lora_qwen15b_shortcut_dpos_only outputs/lora_qwen15b_1step_nobounce_bidirectional/checkpoint-5 outputs/lora_qwen15b_1step_nobounce_bidirectional/checkpoint-10 outputs/lora_qwen15b_1step_nobounce_bidirectional/checkpoint-20 outputs/lora_qwen15b_1step_nobounce_bidirectional/checkpoint-50 outputs/lora_qwen15b_1step_nobounce_bidirectional/checkpoint-75 outputs/lora_qwen15b_1step_nobounce_bidirectional/checkpoint-100 outputs/lora_qwen15b_1step_nobounce_bidirectional/checkpoint-150 outputs/lora_qwen15b_1step_nobounce_bidirectional/checkpoint-200 --datasets pos_ood=data/processed/eval_1step_nobounce_pos_ood_symbolic.jsonl neg_ood=data/processed/eval_1step_nobounce_neg_ood_symbolic.jsonl bidir_ood=data/processed/eval_1step_nobounce_bidirectional_ood_symbolic.jsonl --output outputs/checkpoint_sweep_bidirectional.csv --device 0 --max-new-tokens 64 --save-predictions
+```
+
+The CSV contains normal behavior metrics plus shortcut/error-pattern rates:
+
+- `pred_d_is_1_rate`, `pred_d_is_minus1_rate`
+- `z_plus_step_rate`, `z_minus_step_rate`, `z_noop_rate`
+- `d_copy_rate`, `d_flip_rate`
+- `k_copy_rate`, `w_copy_rate`
+- `null_or_invalid_rate`, `extra_keys_rate`
+
+With `--save-predictions`, per-example files are written under:
+
+```text
+outputs/sweeps/<checkpoint_name>/<dataset_name>.jsonl
+```
+
+Interpretation guide:
+
+- Shortcut phase: high `pos_ood` accuracy, low `neg_ood` accuracy, high `z_plus_step_rate`, high `pred_d_is_1_rate`, low `d_copy_rate` on negative-direction examples.
+- Transition phase: `z_minus_step_rate` and `d_copy_rate` rise on `neg_ood`, while `z_plus_step_rate` falls there.
+- Rule phase: exact match and per-variable accuracy are high across positive, negative, and bidirectional OOD sets; `d_copy_rate`, `k_copy_rate`, and `w_copy_rate` are high for no-boundary data.
 
 ## Curriculum Data Commands
 
